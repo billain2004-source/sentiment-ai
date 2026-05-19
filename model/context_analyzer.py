@@ -142,17 +142,6 @@ class ContextAnalyzer:
                 continue
             seen.add(key)
 
-            # If spaCy tagged it as ORG/PRODUCT but it's actually a known name, override
-            gender = self._name_gender(ent.text.split()[0])  # check first word of entity
-            if gender and ent.label_ in ('ORG', 'PRODUCT', 'WORK_OF_ART'):
-                contexts.append({
-                    'word': ent.text,
-                    'type': gender['type'],
-                    'description': gender['description'],
-                    'css_class': gender['css_class'],
-                })
-                continue
-
             # For PERSON entities, try to detect gender from name
             if ent.label_ == 'PERSON':
                 first_word = ent.text.split()[0]
@@ -168,10 +157,36 @@ class ContextAnalyzer:
                     contexts.append({
                         'word': ent.text,
                         'type': 'Person',
-                        'description': 'Named individual / person',
+                        'description': f'"{ent.text}" is a named individual',
                         'css_class': 'PERSON',
                     })
                 continue
+
+            # If spaCy tagged as ORG/PRODUCT, check if it's actually a name
+            if ent.label_ in ('ORG', 'PRODUCT', 'WORK_OF_ART'):
+                first_word = ent.text.split()[0]
+                gender = self._name_gender(first_word)
+                if gender:
+                    contexts.append({
+                        'word': ent.text,
+                        'type': gender['type'],
+                        'description': gender['description'],
+                        'css_class': gender['css_class'],
+                    })
+                    continue
+                # Single title-cased word tagged as ORG is likely a misidentified person name
+                words = ent.text.split()
+                if (len(words) <= 2
+                        and all(w[0].isupper() for w in words if w)
+                        and ent.text.lower() not in self.domain_dict
+                        and not any(w.lower() in {'inc', 'ltd', 'corp', 'llc', 'co', 'group', 'company', 'industries'} for w in words)):
+                    contexts.append({
+                        'word': ent.text,
+                        'type': 'Person',
+                        'description': f'"{ent.text}" appears to be a personal name',
+                        'css_class': 'PERSON',
+                    })
+                    continue
 
             css = self.ner_css.get(ent.label_, 'default')
             description = spacy.explain(ent.label_) or ent.label_
@@ -194,6 +209,16 @@ class ContextAnalyzer:
                         'type': gender['type'],
                         'description': gender['description'],
                         'css_class': gender['css_class'],
+                    })
+                elif (token.text[0].isupper()
+                      and key not in self.domain_dict
+                      and not token.is_stop):
+                    seen.add(key)
+                    contexts.append({
+                        'word': token.text,
+                        'type': 'Person',
+                        'description': f'"{token.text}" appears to be a personal name',
+                        'css_class': 'PERSON',
                     })
 
         for token in doc:
