@@ -10,3 +10,7 @@ dist/
 build/
 .cache/
 *.log
+.claude/
+.claude/
+.claude/
+.claude/
