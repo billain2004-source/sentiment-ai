@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+model/fine_tuned/
+*.egg-info/
+dist/
+build/
+.cache/
+*.log

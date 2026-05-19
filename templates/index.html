@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SentimentAI — BERT NLP Analyzer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+<!-- Animated background -->
+<div class="bg" aria-hidden="true">
+  <div class="blob b1"></div>
+  <div class="blob b2"></div>
+  <div class="blob b3"></div>
+</div>
+
+<!-- App shell -->
+<div class="app">
+
+  <!-- ── Header ── -->
+  <header class="header">
+    <div class="brand">
+      <div class="brand-icon"><i class="fas fa-brain"></i></div>
+      <span class="brand-name">Sentiment<strong>AI</strong></span>
+      <span class="model-pill"><i class="fas fa-microchip"></i> BERT + VADER</span>
+    </div>
+    <div class="header-stats">
+      <div class="hstat">
+        <span class="hstat-val" id="stat-acc">91%</span>
+        <span class="hstat-lbl">Accuracy</span>
+      </div>
+      <div class="hstat-divider"></div>
+      <div class="hstat">
+        <span class="hstat-val" id="stat-count">0</span>
+        <span class="hstat-lbl">Analyzed</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Main layout ── -->
+  <main class="layout">
+
+    <!-- LEFT COLUMN -->
+    <div class="col-left">
+
+      <!-- Input card -->
+      <div class="card input-card">
+        <div class="card-head">
+          <span class="card-title"><i class="fas fa-pen-to-square"></i> Input Text</span>
+          <button class="ghost-btn" id="btn-example" title="Load example"><i class="fas fa-lightbulb"></i> Example</button>
+        </div>
+        <div class="textarea-wrap">
+          <textarea id="txt" placeholder="Type or paste text to analyze…&#10;e.g. She played cricket brilliantly in the final." rows="7" spellcheck="false"></textarea>
+          <span class="char-pill" id="char-count">0 / 512</span>
+        </div>
+        <div class="input-actions">
+          <button class="btn-primary" id="btn-analyze">
+            <i class="fas fa-magnifying-glass-chart"></i> Analyze
+          </button>
+          <button class="btn-ghost" id="btn-clear"><i class="fas fa-rotate-left"></i> Clear</button>
+        </div>
+      </div>
+
+      <!-- Word tokens card -->
+      <div class="card tokens-card" id="tokens-card" style="display:none">
+        <div class="card-head">
+          <span class="card-title"><i class="fas fa-highlighter"></i> Word-Level Sentiment</span>
+        </div>
+        <div class="tokens-wrap" id="tokens-wrap"></div>
+      </div>
+
+      <!-- History card -->
+      <div class="card history-card">
+        <div class="card-head">
+          <span class="card-title"><i class="fas fa-clock-rotate-left"></i> History</span>
+          <button class="ghost-btn" id="btn-clear-hist"><i class="fas fa-trash-can"></i></button>
+        </div>
+        <div class="history-body" id="history-body">
+          <p class="empty-hint">No analyses yet.</p>
+        </div>
+      </div>
+
+    </div><!-- /col-left -->
+
+    <!-- RIGHT COLUMN -->
+    <div class="col-right">
+
+      <!-- Sentiment gauge card -->
+      <div class="card gauge-card" id="gauge-card">
+        <div class="card-head">
+          <span class="card-title"><i class="fas fa-chart-pie"></i> Sentiment Result</span>
+          <span class="intensity-chip" id="intensity-chip" style="display:none"></span>
+        </div>
+
+        <div class="gauge-idle" id="gauge-idle">
+          <i class="fas fa-brain gauge-idle-icon"></i>
+          <p>Enter text and press <strong>Analyze</strong></p>
+          <kbd>Ctrl</kbd> + <kbd>Enter</kbd>
+        </div>
+
+        <div class="gauge-result" id="gauge-result" style="display:none">
+
+          <!-- Speedometer SVG -->
+          <div class="speedometer-wrap">
+            <svg class="speedometer" viewBox="0 0 220 130" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="arc-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%"   stop-color="#ef4444"/>
+                  <stop offset="50%"  stop-color="#f59e0b"/>
+                  <stop offset="100%" stop-color="#10b981"/>
+                </linearGradient>
+              </defs>
+              <!-- Track -->
+              <path d="M 20 115 A 90 90 0 0 1 200 115" stroke="rgba(255,255,255,0.08)" stroke-width="18" fill="none" stroke-linecap="round"/>
+              <!-- Colored arc -->
+              <path d="M 20 115 A 90 90 0 0 1 200 115" stroke="url(#arc-grad)" stroke-width="18" fill="none" stroke-linecap="round"/>
+              <!-- Needle -->
+              <line id="needle" x1="110" y1="115" x2="110" y2="45" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+              <!-- Center hub -->
+              <circle cx="110" cy="115" r="6" fill="white"/>
+              <!-- Labels -->
+              <text x="14"  y="130" fill="#ef4444" font-size="9" font-family="Inter,sans-serif" font-weight="600">–1</text>
+              <text x="103" y="22"  fill="#f59e0b" font-size="9" font-family="Inter,sans-serif" font-weight="600">0</text>
+              <text x="198" y="130" fill="#10b981" font-size="9" font-family="Inter,sans-serif" font-weight="600" text-anchor="end">+1</text>
+            </svg>
+            <div class="gauge-label-wrap">
+              <span class="gauge-emoji" id="gauge-emoji">🤔</span>
+              <span class="gauge-label" id="gauge-label">—</span>
+              <span class="gauge-conf" id="gauge-conf">—</span>
+            </div>
+          </div>
+
+          <!-- Bar breakdown -->
+          <div class="breakdown">
+            <div class="breakdown-row">
+              <span class="br-label pos-label">Positive</span>
+              <div class="br-track"><div class="br-fill br-pos" id="bar-pos"></div></div>
+              <span class="br-pct" id="pct-pos">0%</span>
+            </div>
+            <div class="breakdown-row">
+              <span class="br-label neu-label">Neutral</span>
+              <div class="br-track"><div class="br-fill br-neu" id="bar-neu"></div></div>
+              <span class="br-pct" id="pct-neu">0%</span>
+            </div>
+            <div class="breakdown-row">
+              <span class="br-label neg-label">Negative</span>
+              <div class="br-track"><div class="br-fill br-neg" id="bar-neg"></div></div>
+              <span class="br-pct" id="pct-neg">0%</span>
+            </div>
+          </div>
+
+          <!-- Compound score chip -->
+          <div class="compound-row">
+            <span class="compound-lbl">Compound Score</span>
+            <span class="compound-val" id="compound-val">—</span>
+          </div>
+
+        </div><!-- /gauge-result -->
+      </div>
+
+      <!-- Context card -->
+      <div class="card context-card">
+        <div class="card-head">
+          <span class="card-title"><i class="fas fa-tags"></i> Contextual Meanings</span>
+          <span class="context-count-chip" id="ctx-count" style="display:none"></span>
+        </div>
+        <div class="context-idle" id="ctx-idle">
+          <i class="fas fa-magnifying-glass"></i>
+          <p>Entities, pronouns &amp; domain context will appear here.</p>
+        </div>
+        <div class="context-grid" id="ctx-grid" style="display:none"></div>
+      </div>
+
+    </div><!-- /col-right -->
+
+  </main>
+
+</div><!-- /app -->
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loading" aria-hidden="true">
+  <div class="loader-box">
+    <div class="spinner"></div>
+    <p>Analyzing with BERT…</p>
+  </div>
+</div>
+
+<script src="/static/js/main.js"></script>
+</body>
+</html>
