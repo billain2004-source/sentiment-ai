@@ -115,8 +115,8 @@ function renderGauge(s) {
   const angleRad   = angleDeg * Math.PI / 180;
   const R          = 70;                            // needle length
   const cx = 110, cy = 115;
-  const nx = cx + R * Math.cos(Math.PI - angleRad);
-  const ny = cy - R * Math.sin(Math.PI - angleRad);
+  const nx = cx + R * Math.cos(angleRad);
+  const ny = cy - R * Math.sin(angleRad);
   needle.setAttribute('x2', nx.toFixed(1));
   needle.setAttribute('y2', ny.toFixed(1));
 
