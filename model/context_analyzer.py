@@ -97,16 +97,82 @@ class ContextAnalyzer:
             'QUANTITY': 'domain',
         }
 
+        # Common first names with gender
+        self.male_names = {
+            'james','john','robert','michael','william','david','richard','joseph','thomas','charles',
+            'christopher','daniel','matthew','anthony','mark','donald','steven','paul','andrew','joshua',
+            'kevin','brian','george','timothy','ronald','edward','jason','jeffrey','ryan','jacob',
+            'gary','nicholas','eric','jonathan','stephen','larry','justin','scott','brandon','benjamin',
+            'samuel','raymond','frank','gregory','raymond','henry','patrick','alexander','jack','dennis',
+            'arjun','rahul','amit','vikram','raj','rohan','aditya','ankit','nikhil','sanjay',
+            'suresh','mahesh','ramesh','ganesh','dinesh','rakesh','mukesh','prabhat','kiran','vishal',
+            'liam','noah','ethan','mason','logan','lucas','oliver','aiden','elijah','jayden',
+            'adam','ali','omar','hassan','ahmed','mohammed','ibrahim','yusuf','carlos','juan',
+            'miguel','antonio','luis','jose','pedro','pablo','fernando','sergio','mario','manuel',
+        }
+
+        self.female_names = {
+            'mary','patricia','jennifer','linda','barbara','elizabeth','susan','jessica','sarah','karen',
+            'lisa','nancy','betty','margaret','sandra','ashley','dorothy','kimberly','emily','donna',
+            'michelle','carol','amanda','melissa','deborah','stephanie','rebecca','sharon','laura','cynthia',
+            'katherine','amy','angela','helen','anna','brenda','pamela','emma','nicole','helen',
+            'priya','ananya','kavya','sneha','pooja','divya','deepa','meena','latha','nisha',
+            'aarti','sunita','savita','geeta','rekha','sushma','madhuri','shikha','neha','ritu',
+            'sophia','olivia','isabella','mia','charlotte','amelia','harper','evelyn','abigail','ella',
+            'fatima','aisha','zainab','mariam','noor','sara','layla','yasmin','hana','rania',
+            'sofia','camila','valentina','lucia','gabriela','paula','andrea','isabel','diana','elena',
+        }
+
+    def _name_gender(self, name: str):
+        n = name.lower().strip()
+        if n in self.male_names:
+            return {'type': 'Person · Male', 'description': f'"{name}" is a male first name', 'css_class': 'pronoun-male'}
+        if n in self.female_names:
+            return {'type': 'Person · Female', 'description': f'"{name}" is a female first name', 'css_class': 'pronoun-female'}
+        return None
+
     def analyze(self, text: str) -> List[Dict]:
         doc = self.nlp(text)
         contexts = []
         seen = set()
 
         for ent in doc.ents:
-            key = ent.text.lower()
+            key = ent.text.lower().strip()
             if key in seen:
                 continue
             seen.add(key)
+
+            # If spaCy tagged it as ORG/PRODUCT but it's actually a known name, override
+            gender = self._name_gender(ent.text.split()[0])  # check first word of entity
+            if gender and ent.label_ in ('ORG', 'PRODUCT', 'WORK_OF_ART'):
+                contexts.append({
+                    'word': ent.text,
+                    'type': gender['type'],
+                    'description': gender['description'],
+                    'css_class': gender['css_class'],
+                })
+                continue
+
+            # For PERSON entities, try to detect gender from name
+            if ent.label_ == 'PERSON':
+                first_word = ent.text.split()[0]
+                gender = self._name_gender(first_word)
+                if gender:
+                    contexts.append({
+                        'word': ent.text,
+                        'type': gender['type'],
+                        'description': gender['description'],
+                        'css_class': gender['css_class'],
+                    })
+                else:
+                    contexts.append({
+                        'word': ent.text,
+                        'type': 'Person',
+                        'description': 'Named individual / person',
+                        'css_class': 'PERSON',
+                    })
+                continue
+
             css = self.ner_css.get(ent.label_, 'default')
             description = spacy.explain(ent.label_) or ent.label_
             contexts.append({
@@ -115,6 +181,20 @@ class ContextAnalyzer:
                 'description': description.capitalize(),
                 'css_class': css,
             })
+
+        # Catch proper nouns spaCy missed as entities
+        for token in doc:
+            key = token.text.lower().strip()
+            if token.pos_ == 'PROPN' and key not in seen:
+                gender = self._name_gender(key)
+                if gender:
+                    seen.add(key)
+                    contexts.append({
+                        'word': token.text,
+                        'type': gender['type'],
+                        'description': gender['description'],
+                        'css_class': gender['css_class'],
+                    })
 
         for token in doc:
             key = token.text.lower()
