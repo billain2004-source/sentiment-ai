@@ -3,7 +3,6 @@
 // ── State ──────────────────────────────────────────────────────
 let analysisCount = 0;
 let history = [];
-let totalConfidence = 0;
 
 const EXAMPLES = [
   "She played cricket brilliantly in the final match.",
@@ -28,7 +27,6 @@ const btnClearH   = document.getElementById('btn-clear-hist');
 const histBody    = document.getElementById('history-body');
 const loading     = document.getElementById('loading');
 const statCount   = document.getElementById('stat-count');
-const statAcc     = document.getElementById('stat-acc');
 
 // gauge refs
 const gaugeIdle   = document.getElementById('gauge-idle');
@@ -90,9 +88,7 @@ async function runAnalysis() {
     pushHistory(text, data.sentiment);
 
     analysisCount++;
-    totalConfidence += data.sentiment.confidence;
     statCount.textContent = analysisCount;
-    statAcc.textContent = Math.round((totalConfidence / analysisCount) * 100) + '%';
   } catch (err) {
     gaugeIdle.innerHTML = `<i class="fas fa-circle-exclamation" style="font-size:2rem;color:#ef4444"></i>
       <p style="color:#ef4444">${esc(err.message || 'Analysis failed. Is the server running?')}</p>`;
