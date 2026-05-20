@@ -2,7 +2,9 @@ import subprocess
 import sys
 from typing import List, Dict
 import spacy
+import pycountry
 import gender_guesser.detector as gender_detector
+from names_dataset import NameDataset
 
 
 def _load_spacy():
@@ -16,7 +18,12 @@ def _load_spacy():
 class ContextAnalyzer:
     def __init__(self):
         self.nlp = _load_spacy()
-        self._gender_detector = gender_detector.Detector(case_sensitive=False)
+        self._nd = NameDataset()                                    # 160k+ names, 101 countries
+        self._gender_detector = gender_detector.Detector(case_sensitive=False)  # fallback
+
+        # Build a set of known country/territory names to avoid misclassifying them as persons
+        self._country_names = {c.name.lower() for c in pycountry.countries}
+        self._country_names.update({c.common_name.lower() for c in pycountry.countries if hasattr(c, 'common_name')})
 
         self.pronoun_map = {
             'she':  {'type': 'Person · Female',        'description': 'Third-person singular feminine pronoun', 'css_class': 'pronoun-female'},
@@ -99,42 +106,29 @@ class ContextAnalyzer:
             'QUANTITY': 'domain',
         }
 
-        # Supplementary names not in gender_guesser database (primarily South Asian)
-        self._supplementary = {
-            # Male
-            'arjun': 'male', 'rahul': 'male', 'amit': 'male', 'vikram': 'male',
-            'raj': 'male', 'rohan': 'male', 'aditya': 'male', 'ankit': 'male',
-            'nikhil': 'male', 'sanjay': 'male', 'suresh': 'male', 'mahesh': 'male',
-            'ramesh': 'male', 'ganesh': 'male', 'dinesh': 'male', 'rakesh': 'male',
-            'mukesh': 'male', 'prabhat': 'male', 'vishal': 'male', 'kapil': 'male',
-            'ajay': 'male', 'vijay': 'male', 'siddharth': 'male', 'kartik': 'male',
-            'yash': 'male', 'aarav': 'male', 'vivek': 'male', 'gaurav': 'male',
-            'manish': 'male', 'deepak': 'male', 'rajesh': 'male', 'naresh': 'male',
-            'hitesh': 'male', 'jitesh': 'male', 'pratik': 'male', 'hardik': 'male',
-            # Female
-            'priya': 'female', 'ananya': 'female', 'kavya': 'female', 'sneha': 'female',
-            'pooja': 'female', 'divya': 'female', 'deepa': 'female', 'meena': 'female',
-            'latha': 'female', 'nisha': 'female', 'aarti': 'female', 'sunita': 'female',
-            'savita': 'female', 'geeta': 'female', 'rekha': 'female', 'sushma': 'female',
-            'madhuri': 'female', 'shikha': 'female', 'neha': 'female', 'ritu': 'female',
-            'anjali': 'female', 'swati': 'female', 'shreya': 'female', 'ishita': 'female',
-            'tanya': 'female', 'tanvi': 'female', 'pallavi': 'female', 'rashmita': 'female',
-            'komal': 'female', 'sonal': 'female', 'monika': 'female', 'varsha': 'female',
-            'manisha': 'female', 'poonam': 'female', 'archana': 'female', 'usha': 'female',
-            'kiran': 'female',
-        }
+    def _name_gender(self, name: str, min_confidence: float = 0.55):
+        # Primary: names-dataset (160k+ names, 101 countries, with probability scores)
+        try:
+            r = self._nd.search(name.strip())
+            fn = r.get('first_name') if r else None
+            if fn:
+                g = fn.get('gender', {})
+                male = g.get('Male', 0)
+                female = g.get('Female', 0)
+                total = male + female
+                if total > 0:
+                    if male / total >= min_confidence:
+                        return {'type': 'Person · Male', 'description': f'"{name}" is a male first name', 'css_class': 'pronoun-male'}
+                    if female / total >= min_confidence:
+                        return {'type': 'Person · Female', 'description': f'"{name}" is a female first name', 'css_class': 'pronoun-female'}
+        except Exception:
+            pass
 
-    def _name_gender(self, name: str):
+        # Fallback: gender-guesser (48k names, 79 countries)
         result = self._gender_detector.get_gender(name.strip())
         if result in ('male', 'mostly_male'):
             return {'type': 'Person · Male', 'description': f'"{name}" is a male first name', 'css_class': 'pronoun-male'}
         if result in ('female', 'mostly_female'):
-            return {'type': 'Person · Female', 'description': f'"{name}" is a female first name', 'css_class': 'pronoun-female'}
-        # Fallback to supplementary dictionary
-        supp = self._supplementary.get(name.lower().strip())
-        if supp == 'male':
-            return {'type': 'Person · Male', 'description': f'"{name}" is a male first name', 'css_class': 'pronoun-male'}
-        if supp == 'female':
             return {'type': 'Person · Female', 'description': f'"{name}" is a female first name', 'css_class': 'pronoun-female'}
         return None
 
@@ -170,17 +164,20 @@ class ContextAnalyzer:
                 continue
 
             # If spaCy misclassified a name as GPE/NORP/LOC, correct it
-            if ent.label_ in ('GPE', 'NORP', 'LOC'):
+            # Skip if the full entity text is a known country name
+            if ent.label_ in ('GPE', 'NORP', 'LOC') and ent.text.lower() not in self._country_names:
                 first_word = ent.text.split()[0]
-                gender = self._name_gender(first_word)
-                if gender:
-                    contexts.append({
-                        'word': ent.text,
-                        'type': gender['type'],
-                        'description': gender['description'],
-                        'css_class': gender['css_class'],
-                    })
-                    continue
+                if first_word.lower() not in self._country_names:
+                    # Use strict 85% confidence threshold to avoid city names being treated as persons
+                    gender = self._name_gender(first_word, min_confidence=0.85)
+                    if gender:
+                        contexts.append({
+                            'word': ent.text,
+                            'type': gender['type'],
+                            'description': gender['description'],
+                            'css_class': gender['css_class'],
+                        })
+                        continue
 
             # If spaCy tagged as ORG/PRODUCT, check if it's actually a name
             if ent.label_ in ('ORG', 'PRODUCT', 'WORK_OF_ART'):
