@@ -2,6 +2,7 @@ import subprocess
 import sys
 from typing import List, Dict
 import spacy
+import gender_guesser.detector as gender_detector
 
 
 def _load_spacy():
@@ -15,6 +16,7 @@ def _load_spacy():
 class ContextAnalyzer:
     def __init__(self):
         self.nlp = _load_spacy()
+        self._gender_detector = gender_detector.Detector(case_sensitive=False)
 
         self.pronoun_map = {
             'she':  {'type': 'Person · Female',        'description': 'Third-person singular feminine pronoun', 'css_class': 'pronoun-female'},
@@ -97,37 +99,42 @@ class ContextAnalyzer:
             'QUANTITY': 'domain',
         }
 
-        # Common first names with gender
-        self.male_names = {
-            'james','john','robert','michael','william','david','richard','joseph','thomas','charles',
-            'christopher','daniel','matthew','anthony','mark','donald','steven','paul','andrew','joshua',
-            'kevin','brian','george','timothy','ronald','edward','jason','jeffrey','ryan','jacob',
-            'gary','nicholas','eric','jonathan','stephen','larry','justin','scott','brandon','benjamin',
-            'samuel','raymond','frank','gregory','raymond','henry','patrick','alexander','jack','dennis',
-            'arjun','rahul','amit','vikram','raj','rohan','aditya','ankit','nikhil','sanjay',
-            'suresh','mahesh','ramesh','ganesh','dinesh','rakesh','mukesh','prabhat','kiran','vishal',
-            'liam','noah','ethan','mason','logan','lucas','oliver','aiden','elijah','jayden',
-            'adam','ali','omar','hassan','ahmed','mohammed','ibrahim','yusuf','carlos','juan',
-            'miguel','antonio','luis','jose','pedro','pablo','fernando','sergio','mario','manuel',
-        }
-
-        self.female_names = {
-            'mary','patricia','jennifer','linda','barbara','elizabeth','susan','jessica','sarah','karen',
-            'lisa','nancy','betty','margaret','sandra','ashley','dorothy','kimberly','emily','donna',
-            'michelle','carol','amanda','melissa','deborah','stephanie','rebecca','sharon','laura','cynthia',
-            'katherine','amy','angela','helen','anna','brenda','pamela','emma','nicole','helen',
-            'priya','ananya','kavya','sneha','pooja','divya','deepa','meena','latha','nisha',
-            'aarti','sunita','savita','geeta','rekha','sushma','madhuri','shikha','neha','ritu',
-            'sophia','olivia','isabella','mia','charlotte','amelia','harper','evelyn','abigail','ella',
-            'fatima','aisha','zainab','mariam','noor','sara','layla','yasmin','hana','rania',
-            'sofia','camila','valentina','lucia','gabriela','paula','andrea','isabel','diana','elena',
+        # Supplementary names not in gender_guesser database (primarily South Asian)
+        self._supplementary = {
+            # Male
+            'arjun': 'male', 'rahul': 'male', 'amit': 'male', 'vikram': 'male',
+            'raj': 'male', 'rohan': 'male', 'aditya': 'male', 'ankit': 'male',
+            'nikhil': 'male', 'sanjay': 'male', 'suresh': 'male', 'mahesh': 'male',
+            'ramesh': 'male', 'ganesh': 'male', 'dinesh': 'male', 'rakesh': 'male',
+            'mukesh': 'male', 'prabhat': 'male', 'vishal': 'male', 'kapil': 'male',
+            'ajay': 'male', 'vijay': 'male', 'siddharth': 'male', 'kartik': 'male',
+            'yash': 'male', 'aarav': 'male', 'vivek': 'male', 'gaurav': 'male',
+            'manish': 'male', 'deepak': 'male', 'rajesh': 'male', 'naresh': 'male',
+            'hitesh': 'male', 'jitesh': 'male', 'pratik': 'male', 'hardik': 'male',
+            # Female
+            'priya': 'female', 'ananya': 'female', 'kavya': 'female', 'sneha': 'female',
+            'pooja': 'female', 'divya': 'female', 'deepa': 'female', 'meena': 'female',
+            'latha': 'female', 'nisha': 'female', 'aarti': 'female', 'sunita': 'female',
+            'savita': 'female', 'geeta': 'female', 'rekha': 'female', 'sushma': 'female',
+            'madhuri': 'female', 'shikha': 'female', 'neha': 'female', 'ritu': 'female',
+            'anjali': 'female', 'swati': 'female', 'shreya': 'female', 'ishita': 'female',
+            'tanya': 'female', 'tanvi': 'female', 'pallavi': 'female', 'rashmita': 'female',
+            'komal': 'female', 'sonal': 'female', 'monika': 'female', 'varsha': 'female',
+            'manisha': 'female', 'poonam': 'female', 'archana': 'female', 'usha': 'female',
+            'kiran': 'female',
         }
 
     def _name_gender(self, name: str):
-        n = name.lower().strip()
-        if n in self.male_names:
+        result = self._gender_detector.get_gender(name.strip())
+        if result in ('male', 'mostly_male'):
             return {'type': 'Person · Male', 'description': f'"{name}" is a male first name', 'css_class': 'pronoun-male'}
-        if n in self.female_names:
+        if result in ('female', 'mostly_female'):
+            return {'type': 'Person · Female', 'description': f'"{name}" is a female first name', 'css_class': 'pronoun-female'}
+        # Fallback to supplementary dictionary
+        supp = self._supplementary.get(name.lower().strip())
+        if supp == 'male':
+            return {'type': 'Person · Male', 'description': f'"{name}" is a male first name', 'css_class': 'pronoun-male'}
+        if supp == 'female':
             return {'type': 'Person · Female', 'description': f'"{name}" is a female first name', 'css_class': 'pronoun-female'}
         return None
 
@@ -161,6 +168,19 @@ class ContextAnalyzer:
                         'css_class': 'PERSON',
                     })
                 continue
+
+            # If spaCy misclassified a name as GPE/NORP/LOC, correct it
+            if ent.label_ in ('GPE', 'NORP', 'LOC'):
+                first_word = ent.text.split()[0]
+                gender = self._name_gender(first_word)
+                if gender:
+                    contexts.append({
+                        'word': ent.text,
+                        'type': gender['type'],
+                        'description': gender['description'],
+                        'css_class': gender['css_class'],
+                    })
+                    continue
 
             # If spaCy tagged as ORG/PRODUCT, check if it's actually a name
             if ent.label_ in ('ORG', 'PRODUCT', 'WORK_OF_ART'):
